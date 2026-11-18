@@ -1,0 +1,21 @@
+[project]
+name = "regimo-core"
+version = "0.1.0"
+description = "Foundational library and base abstractions for the Regimo Energy Data Orchestrator: ontology-aware Kafka communication."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "confluent-kafka>=2.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/regimo_core"]

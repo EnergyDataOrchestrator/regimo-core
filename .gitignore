@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editable installs
+*.pth
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# macOS
+.DS_Store

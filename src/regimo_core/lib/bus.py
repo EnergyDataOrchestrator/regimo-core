@@ -11,7 +11,7 @@ provided by ``docker compose up zookeeper kafka`` (``localhost:9092``).
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 
@@ -97,21 +97,36 @@ class BusClient:
         msg = self._consumer.poll(self.timeout_s)
         if msg is None:
             return None
-        if msg.error():
-            if msg.error().code() == KafkaError._PARTITION_EOF:
+
+        # confluent-kafka's stubs incorrectly model these as ``None`` even
+        # though the runtime returns real objects/bytes here; the checks below
+        # are the source of truth and the ``# type: ignore`` flags only the
+        # broken stub. See https://github.com/confluentinc/confluent-kafka-python
+        error = msg.error()  # type: ignore[union-attr]
+        if error is not None:
+            if error.code() == KafkaError._PARTITION_EOF:
                 return None
-            raise BusError(msg.error().str())
+            raise BusError(error.str())
+
+        value = msg.value()  # type: ignore[union-attr]
+        if value is None:
+            raise BusError(f"tombstone message on {msg.topic()} (no value)")
 
         try:
-            payload = json.loads(msg.value().decode("utf-8"))
+            payload = json.loads(value.decode("utf-8"))
         except (json.JSONDecodeError, AttributeError) as exc:
             raise BusError(f"non-JSON payload on {msg.topic()}: {exc}") from exc
 
+        headers = msg.headers()
+        key = msg.key()  # type: ignore[union-attr]
+
         return {
             "payload": payload,
-            "header": MessageHeader.from_headers(msg.headers()),
+            "header": MessageHeader.from_headers(
+                [(h[0], h[1]) for h in headers] if headers else None
+            ),
             "topic": msg.topic(),
-            "key": msg.key().decode("utf-8") if msg.key() else None,
+            "key": key.decode("utf-8") if key else None,
             "offset": msg.offset(),
             "timestamp_ms": msg.timestamp(),
         }

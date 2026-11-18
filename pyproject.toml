@@ -17,5 +17,12 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "live: tests that run against a real Kafka bus (auto-skipped when none is reachable)",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/regimo_core"]

@@ -80,11 +80,11 @@ class MessageHeader:
     def from_mapping(cls, mapping: Dict[str, Any]) -> "MessageHeader":
         """Build a header from a plain dict, tolerating absent keys."""
         return cls(
-            socket_id=str(mapping.get("socket_id", "")),
-            ontology_uri=str(mapping.get("ontology_uri", "")),
-            project_id=str(mapping.get("project_id", "")),
-            schema_id=str(mapping.get("schema_id", "")),
-            timestamp=str(mapping.get("timestamp", _utc_now().isoformat())),
+            socket_id=str(mapping.get("socket_id") or ""),
+            ontology_uri=str(mapping.get("ontology_uri") or ""),
+            project_id=str(mapping.get("project_id") or ""),
+            schema_id=str(mapping.get("schema_id") or ""),
+            timestamp=str(mapping.get("timestamp") or _utc_now().isoformat()),
             lineage=mapping.get("lineage"),
         )
 

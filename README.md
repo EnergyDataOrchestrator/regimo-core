@@ -79,6 +79,41 @@ is the canonical end-to-end check that the maDMP first payload survives the bus
 with its ontology-aware headers intact. It is the same logic the live test
 exercises programmatically. See the [[CF1-001]] card for the full activity log.
 
+### The RDMO sync engine (CF1)
+`src/regimo_core/sync/` is the pull-based sync between an RDMO instance and the
+internal graph database (Fuseki). One `regimo-core sync` run (CLI in `cli.py`)
+does:
+
+1. list the projects on the RDMO instance (REST API, token auth — `lib/rdmo.py`),
+2. pull each project's maDMP from the export-plugin endpoint
+   (`api/v1/madmp/projects/{pk}/`, provided by `components/socket-rdmo/madmp-exporter`)
+   and digest it (SHA-256 over the canonical JSON plus any curated SMS extras),
+3. transform new/changed maDMPs into the internal format via the canonical
+   `fuseki-proto` agnostic-trip transform (`sync/transform.py`) and write one
+   Turtle artifact per project,
+4. drop artifacts of projects that vanished on the RDMO side,
+5. on any change, replace the Fuseki default graph from exactly the current
+   artifacts (`lib/fuseki.py`; blank nodes make per-project deletion unreliable),
+6. publish one semantic event per change on `edo.projects.v1`
+   (`sync/events.py`) — consumed by `socket-ux` and forwarded to the
+   frontend as server-sent events.
+
+Unchanged projects are skipped via the persisted digest (`sync/state.json`),
+so a steady-state run costs one project-list call plus one maDMP call per
+project. SMS devices/properties are *not* part of the RDMO pull (finding F12:
+the dataset↔sensor link lives outside the maps); they are curated per project
+under `data/regimo-core/sms/<project_id>/` (`device.json` + `property-*.json`)
+and participate in the digest via `--sms-extras-dir`.
+
+```sh
+# from the edo umbrella (env in .env: RDMO_URL, RDMO_API_TOKEN, ...)
+.venv/bin/regimo-core sync --once --kafka localhost:9092 -v
+```
+
+Projects whose maDMP cannot be transformed (e.g. no `project` array, no
+`access_url` — genuine data gaps in the RDMO answers) are skipped with a
+logged reason and do not block the rest of the sync.
+
 ### Header contract invariants
 Keep `ORDERED_HEADER_KEYS` in `interfaces/message.py` the single source of
 truth for the six headers (`socket_id`, `ontology_uri`, `project_id`,

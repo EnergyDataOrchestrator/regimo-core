@@ -31,8 +31,7 @@ def transform_madmp(document: dict[str, Any], device: dict | None = None,
     except Exception as exc:  # pragma: no cover — depends on the env
         raise TransformError(
             "fuseki-proto is not importable in this environment; install it "
-            "(uv pip install -e projecting_spaces/EDO/Artefacts/07_Fragments/"
-            "scripts/fuseki-proto/tool) to enable the sync engine") from exc
+            "(uv pip install -e infrastructure/fuseki-proto/tool) to enable the sync engine") from exc
 
     try:
         turtle, _checks, meta = transform(document, device, properties or [])

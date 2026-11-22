@@ -8,7 +8,11 @@ dependencies = [
     "confluent-kafka>=2.5",
     "httpx>=0.27",
     "click>=8.1",
+    "fuseki-proto-tool[agnostic]>=0.1.0",  # CF2-004 agnostic-trip transform for the sync engine
 ]
+
+[tool.uv.sources]
+fuseki-proto-tool = { path = "../infrastructure/fuseki-proto/tool", editable = true }
 
 [project.optional-dependencies]
 dev = [

@@ -3,6 +3,14 @@
 All notable changes to `regimo-core` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/); versioning: SemVer.
 
+## [0.2.0] - 2026-11-23
+
+### Added
+- `sync.round` heartbeat published on the `edo.sync.v1` topic after every sync round (including idle ones): created/updated/removed/skipped counts, skip reasons and duration — the basis for the UI's live sync/broadcast display (CF1-012).
+
+### Fixed
+- `regimo-core -h` printed an error instead of help (missing `context_settings`).
+
 ## [0.1.0] - 2026-11-23
 
 First release — the CF1 sync engine.

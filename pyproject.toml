@@ -1,6 +1,6 @@
 [project]
 name = "regimo-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Foundational library and base abstractions for the Regimo Energy Data Orchestrator: ontology-aware Kafka communication."
 readme = "README.md"
 requires-python = ">=3.12"

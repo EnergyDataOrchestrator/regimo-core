@@ -30,7 +30,7 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
-@click.group()
+@click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(package_name="regimo-core", prog_name="regimo-core")
 def cli() -> None:
     """regimo-core — the orchestrator's internal engine (bus + RDMO sync)."""

@@ -7,7 +7,7 @@ import pytest
 
 from regimo_core.lib.rdmo import RDMOProject
 from regimo_core.sync.engine import SyncEngine, SyncState, madmp_digest
-from regimo_core.sync.events import SyncEvent
+from regimo_core.sync.events import PROJECTS_TOPIC, SYNC_TOPIC, SyncEvent
 
 
 class FakeRDMOClient:
@@ -83,9 +83,12 @@ def test_first_run_creates_all_and_replaces_graph(setup):
     assert {name for name, _ in store.replacements[0]} == {"4.ttl", "5.ttl"}
     kinds = sorted(event.kind for event in result.events)
     assert kinds == ["project.created", "project.created"]
-    # every event on the bus, headers carry the regimo-core contract
-    assert all(topic == "edo.projects.v1" for topic, _, _ in bus.published)
-    assert all(h["socket_id"] == "regimo-core" for _, _, h in bus.published)
+    # every project event on the bus, headers carry the regimo-core contract
+    projects = [pub for pub in bus.published if pub[0] == PROJECTS_TOPIC]
+    assert len(projects) == 2
+    assert all(h["socket_id"] == "regimo-core" for _, _, h in projects)
+    # plus one round diagnostic (heartbeat) on the sync topic
+    assert [pub[0] for pub in bus.published if pub[0] == SYNC_TOPIC] == [SYNC_TOPIC]
     # state persisted with digest + artifact name
     state4 = state.get(4)
     assert state4.madmp_sha256 == madmp_digest(client.madmps[4])
@@ -106,7 +109,10 @@ def test_second_run_is_a_no_op(setup):
     assert not second.changed
     assert second.events == []
     assert len(store.replacements) == 1  # no second replace
-    assert bus.published == bus.published[:1]
+    # no further project events, but the round heartbeat is published anyway
+    projects = [pub for pub in bus.published if pub[0] == PROJECTS_TOPIC]
+    rounds = [pub for pub in bus.published if pub[0] == SYNC_TOPIC]
+    assert len(projects) == 1 and len(rounds) == 2
 
 
 def test_changed_madmp_updates(setup):
@@ -233,3 +239,36 @@ def test_event_payload_and_header(setup):
     assert header.project_id == "4"
     assert header.schema_id == "edo.projects.v1"
     assert "agnostic-trip" in header.lineage
+
+
+def test_round_event_announces_stats_and_skips(setup):
+    """The heartbeat carries the round outcome — including skip reasons."""
+    from regimo_core.sync.events import publish_round_event
+
+    store, bus, state, artifacts = setup
+    client = FakeRDMOClient({
+        4: {"dmp": {"title": "M2", "dmp_id": {"identifier": "urn:uuid:4"}}},
+        7: None,  # export raises -> skipped
+    })
+    engine = SyncEngine(client=client, store=store, state=state,
+                        artifacts_dir=artifacts, transform=fake_transform, bus=bus)
+    engine.run_once()
+
+    rounds = [pub for pub in bus.published if pub[0] == SYNC_TOPIC]
+    assert len(rounds) == 1
+    _, payload, header = rounds[0]
+    assert payload["event"] == "sync.round"
+    assert payload["stats"] == {"created": 1, "updated": 0, "removed": 0,
+                                "skipped": 1, "graph_replaced": True}
+    assert payload["skipped"][0]["project_id"] == 7
+    assert "maDMP export failed" in payload["skipped"][0]["reason"]
+    assert isinstance(payload["duration_ms"], int)
+    assert header["socket_id"] == "regimo-core"
+    assert header["schema_id"] == SYNC_TOPIC
+    assert header["project_id"] == ""  # round event is not bound to a project
+
+
+def test_round_event_without_bus_is_a_noop():
+    from regimo_core.sync.events import publish_round_event
+
+    assert publish_round_event(None, None) is False

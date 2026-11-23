@@ -17,6 +17,11 @@ from regimo_core.interfaces.message import MessageHeader
 #: Topic for project lifecycle events of the RDMO pull.
 PROJECTS_TOPIC = "edo.projects.v1"
 
+#: Topic for sync-round diagnostics: one event per engine round (a heartbeat
+#: with the round's outcome), so the UI can show that the sync is alive and
+#: what it skipped — not only what it changed.
+SYNC_TOPIC = "edo.sync.v1"
+
 #: socket_id of this component in the message headers.
 SOCKET_ID = "regimo-core"
 
@@ -67,6 +72,49 @@ def publish_event(client: Any, event: SyncEvent, ontology_uri: str = "") -> bool
         import logging
         logging.getLogger(__name__).warning(
             "bus publish failed for %s: %s", event.kind, exc)
+        return False
+
+
+def publish_round_event(client: Any, result: Any, duration_ms: int = 0,
+                        ontology_uri: str = "") -> bool:
+    """Announce the outcome of one sync round on :data:`SYNC_TOPIC`.
+
+    ``result`` is a ``SyncResult`` (duck-typed to avoid a circular import).
+    Published every round — also when nothing changed — so the round acts as
+    a heartbeat; skipped projects (export/transform failures) are listed with
+    their reasons, which the change events alone never show.
+    """
+    if client is None:
+        return False
+    payload = {
+        "event": "sync.round",
+        "stats": {
+            "created": len(result.created),
+            "updated": len(result.updated),
+            "removed": len(result.removed),
+            "skipped": len(result.skipped),
+            "graph_replaced": result.graph_replaced,
+        },
+        "skipped": [
+            {"project_id": project_id, "reason": reason}
+            for project_id, reason in result.skipped
+        ],
+        "duration_ms": duration_ms,
+    }
+    header = MessageHeader.from_time(
+        socket_id=SOCKET_ID,
+        project_id="",
+        schema_id=SYNC_TOPIC,
+        ontology_uri=ontology_uri,
+        lineage="rdmo -> madmp-exporter -> agnostic-trip -> fuseki -> sync",
+    )
+    try:
+        client.publish(SYNC_TOPIC, payload, header)
+        return True
+    except Exception as exc:  # bus problems must not break the sync
+        import logging
+        logging.getLogger(__name__).warning(
+            "bus publish failed for sync.round: %s", exc)
         return False
 
 

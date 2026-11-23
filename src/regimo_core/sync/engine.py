@@ -22,13 +22,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 from regimo_core.lib.fuseki import FusekiStore
 from regimo_core.lib.rdmo import RDMOClient, RDMOProject
-from regimo_core.sync.events import SyncEvent, publish_event
+from regimo_core.sync.events import SyncEvent, publish_event, publish_round_event
 from regimo_core.sync.state import ProjectState, SyncState
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ class SyncEngine:
     # -- main loop ------------------------------------------------------------
 
     def run_once(self) -> SyncResult:
+        started = time.monotonic()
         result = SyncResult()
         projects = self.client.list_projects()
         remote_ids = {p.id for p in projects}
@@ -112,6 +114,14 @@ class SyncEngine:
 
         for event in result.events:
             publish_event(self.bus, event, self.ontology_uri)
+
+        # one diagnostic event per round (heartbeat): the UI shows that the
+        # sync is alive and what it skipped, not only what it changed
+        publish_round_event(
+            self.bus, result,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            ontology_uri=self.ontology_uri,
+        )
 
         self.state.save()
         return result

@@ -26,6 +26,8 @@ class ProjectState:
     last_changed: str = ""
     madmp_sha256: str = ""
     project_iri: str = ""
+    sensor_iri: str = ""  # curated SMS device IRI (meta.sensor_iri), if any
+    graph_sha256: str = ""  # SHA-256 of the artifact content pushed to Fuseki
     artifact: str = ""  # file name inside the artifacts dir
 
 
@@ -35,6 +37,9 @@ class SyncState:
 
     path: Path
     projects: dict[int, ProjectState] = field(default_factory=dict)
+    # Set after a failed store update so the next round re-uploads *all*
+    # artifacts even when no maDMP changed (self-heal without digest churn).
+    full_replace_pending: bool = False
 
     # -- persistence ---------------------------------------------------------
 
@@ -48,11 +53,13 @@ class SyncState:
                 )
                 for pid, data in raw.get("projects", {}).items()
             }
+            self.full_replace_pending = bool(raw.get("full_replace_pending", False))
         return self
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "full_replace_pending": self.full_replace_pending,
             "projects": {
                 str(pid): {k: v for k, v in vars(state).items() if k != "project_id"}
                 for pid, state in self.projects.items()

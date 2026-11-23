@@ -1,6 +1,6 @@
 [project]
 name = "regimo-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Foundational library and base abstractions for the Regimo Energy Data Orchestrator: ontology-aware Kafka communication."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,6 +8,7 @@ dependencies = [
     "confluent-kafka>=2.5",
     "httpx>=0.27",
     "click>=8.1",
+    "rdflib>=7.0",  # deterministic skolemization of the sync artifacts (REV-001 #1)
     "fuseki-proto-tool[agnostic]>=0.1.0",  # CF2-004 agnostic-trip transform for the sync engine
 ]
 

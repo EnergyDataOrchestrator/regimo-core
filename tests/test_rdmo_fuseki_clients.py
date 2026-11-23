@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from regimo_core.lib.fuseki import FusekiStore
+from regimo_core.lib.fuseki import FusekiError, FusekiStore
 from regimo_core.lib.rdmo import RDMOClient, RDMOError
 
 
@@ -94,6 +94,93 @@ def test_fuseki_replace_all_clears_then_uploads():
     assert [c[2] for c in calls[1:]] == ["<urn:a> a <urn:P> .",
                                          "<urn:b> a <urn:P> ."]
     assert all(c[1] == "text/turtle" for c in calls[1:])
+
+
+def test_fuseki_upsert_project_deletes_closures_then_uploads():
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/update"):
+            calls.append(("update", request.content.decode()))
+            return httpx.Response(200)
+        if request.url.path.endswith("/data"):
+            calls.append(("data", request.content.decode()))
+            return httpx.Response(200)
+        return httpx.Response(500)
+
+    real_post = httpx.post
+
+    def fake_post(url, **kwargs):
+        kwargs.pop("timeout", None)
+        kwargs.pop("auth", None)
+        return handler(httpx.Request("POST", url, **kwargs))
+
+    httpx.post = fake_post
+    try:
+        store = FusekiStore("http://fuseki.test", "projects")
+        store.upsert_project(
+            "urn:uuid:4", "https://w3id.org/edo/sms/dev-67",
+            "<urn:uuid:4> <urn:vocab:p> <urn:uuid:4#b-1> .")
+    finally:
+        httpx.post = real_post
+
+    # first the project closure, then the sensor closure, then the upload
+    assert [kind for kind, _ in calls] == ["update", "update", "data"]
+    project_delete, sensor_delete = calls[0][1], calls[1][1]
+    assert "STR(?s) = 'urn:uuid:4'" in project_delete
+    assert "STRSTARTS(STR(?s), 'urn:uuid:4/')" in project_delete
+    assert "STRSTARTS(STR(?s), 'urn:uuid:4#')" in project_delete
+    assert "ISIRI(?o)" in project_delete
+    assert "dev-67" in sensor_delete and "urn:uuid:4" not in sensor_delete
+    assert calls[2][1].startswith("<urn:uuid:4>")
+
+
+def test_fuseki_upsert_without_sensor_deletes_one_closure():
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/update"):
+            calls.append(("update", request.content.decode()))
+            return httpx.Response(200)
+        if request.url.path.endswith("/data"):
+            calls.append(("data", request.content.decode()))
+            return httpx.Response(200)
+        return httpx.Response(500)
+
+    real_post = httpx.post
+
+    def fake_post(url, **kwargs):
+        kwargs.pop("timeout", None)
+        kwargs.pop("auth", None)
+        return handler(httpx.Request("POST", url, **kwargs))
+
+    httpx.post = fake_post
+    try:
+        store = FusekiStore("http://fuseki.test", "projects")
+        store.upsert_project("urn:uuid:4", "", "<urn:uuid:4> a <urn:P> .")
+        store.remove_project("urn:uuid:4")
+    finally:
+        httpx.post = real_post
+
+    assert [kind for kind, _ in calls] == ["update", "data", "update"]
+    assert "urn:uuid:4" in calls[0][1]
+
+
+def test_fuseki_closure_delete_failure_raises_fuseki_error():
+    real_post = httpx.post
+
+    def fake_post(url, **kwargs):
+        kwargs.pop("timeout", None)
+        kwargs.pop("auth", None)
+        return httpx.Response(500, text="boom")
+
+    httpx.post = fake_post
+    try:
+        store = FusekiStore("http://fuseki.test", "projects")
+        with pytest.raises(FusekiError, match="closure delete"):
+            store.remove_project("urn:uuid:4")
+    finally:
+        httpx.post = real_post
 
 
 def test_fuseki_select_parses_bindings():

@@ -9,4 +9,4 @@ event-driven architecture:
 * :mod:`regimo_core.utils` — timestamp synchronisation, unit conversion.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

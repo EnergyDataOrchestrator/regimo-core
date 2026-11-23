@@ -1544,13 +1544,14 @@ wheels = [
 
 [[package]]
 name = "regimo-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "confluent-kafka" },
     { name = "fuseki-proto-tool", extra = ["agnostic"] },
     { name = "httpx" },
+    { name = "rdflib" },
 ]
 
 [package.optional-dependencies]
@@ -1565,6 +1566,7 @@ requires-dist = [
     { name = "fuseki-proto-tool", extras = ["agnostic"], editable = "../infrastructure/fuseki-proto/tool" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "rdflib", specifier = ">=7.0" },
 ]
 provides-extras = ["dev"]
 

@@ -39,6 +39,8 @@ class SyncEvent:
     project_id: int
     title: str
     project_iri: str = ""
+    plan_digest_sha256: str = ""  # maDMP(+SMS extras) content digest
+    graph_sha256: str = ""  # artifact content digest (skolemized Turtle)
 
     def payload(self) -> dict[str, Any]:
         return {
@@ -47,6 +49,8 @@ class SyncEvent:
                 "id": self.project_id,
                 "title": self.title,
                 "project_iri": self.project_iri,
+                "plan_digest_sha256": self.plan_digest_sha256,
+                "graph_sha256": self.graph_sha256,
             },
         }
 
@@ -76,13 +80,16 @@ def publish_event(client: Any, event: SyncEvent, ontology_uri: str = "") -> bool
 
 
 def publish_round_event(client: Any, result: Any, duration_ms: int = 0,
-                        ontology_uri: str = "") -> bool:
+                        ontology_uri: str = "",
+                        plans: Optional[list[dict[str, str]]] = None) -> bool:
     """Announce the outcome of one sync round on :data:`SYNC_TOPIC`.
 
     ``result`` is a ``SyncResult`` (duck-typed to avoid a circular import).
     Published every round — also when nothing changed — so the round acts as
     a heartbeat; skipped projects (export/transform failures) are listed with
-    their reasons, which the change events alone never show.
+    their reasons, which the change events alone never show. ``plans`` lists
+    the per-project plan/artifact digests so consumers (e.g. the ADP digest
+    badge) can follow them without extra round trips.
     """
     if client is None:
         return False
@@ -94,11 +101,13 @@ def publish_round_event(client: Any, result: Any, duration_ms: int = 0,
             "removed": len(result.removed),
             "skipped": len(result.skipped),
             "graph_replaced": result.graph_replaced,
+            "store_mode": getattr(result, "store_mode", ""),
         },
         "skipped": [
             {"project_id": project_id, "reason": reason}
             for project_id, reason in result.skipped
         ],
+        "plans": plans or [],
         "duration_ms": duration_ms,
     }
     header = MessageHeader.from_time(

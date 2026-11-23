@@ -89,11 +89,15 @@ does:
    (`api/v1/madmp/projects/{pk}/`, provided by `components/socket-rdmo/madmp-exporter`)
    and digest it (SHA-256 over the canonical JSON plus any curated SMS extras),
 3. transform new/changed maDMPs into the internal format via the canonical
-   `fuseki-proto` agnostic-trip transform (`sync/transform.py`) and write one
-   Turtle artifact per project,
+   `fuseki-proto` agnostic-trip transform (`sync/transform.py`), skolemize
+   blank nodes into stable project-scoped IRIs (`sync/skolemize.py`, REV-001 #1)
+   and write one Turtle artifact per project,
 4. drop artifacts of projects that vanished on the RDMO side,
-5. on any change, replace the Fuseki default graph from exactly the current
-   artifacts (`lib/fuseki.py`; blank nodes make per-project deletion unreliable),
+5. update the Fuseki default graph (`lib/fuseki.py`): because the artifacts
+   are skolemized, one changed project is upserted in place (closure delete
+   + re-upload) and a removed project's closure is deleted — a whole-graph
+   replace remains the fallback for unskolemized content and after failures
+   (persisted via `full_replace_pending`, self-heals on the next round),
 6. publish one semantic event per change on `edo.projects.v1`
    (`sync/events.py`) — consumed by `socket-ux` and forwarded to the
    frontend as server-sent events.
@@ -104,6 +108,13 @@ project. SMS devices/properties are *not* part of the RDMO pull (finding F12:
 the dataset↔sensor link lives outside the maps); they are curated per project
 under `data/regimo-core/sms/<project_id>/` (`device.json` + `property-*.json`)
 and participate in the digest via `--sms-extras-dir`.
+
+Two digests are persisted per project and exposed on the bus: the
+**plan digest** (`madmp_sha256`, content of maDMP + SMS extras) and the
+**graph digest** (`graph_sha256`, SHA-256 of the skolemized artifact pushed
+to Fuseki). Change events carry both; the round heartbeat on `edo.sync.v1`
+lists them for every known project (`plans`), and an artifact file whose
+content no longer matches its graph digest is re-transformed automatically.
 
 ```sh
 # from the edo umbrella (env in .env: RDMO_URL, RDMO_API_TOKEN, ...)

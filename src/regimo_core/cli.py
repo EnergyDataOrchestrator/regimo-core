@@ -61,14 +61,19 @@ def cli() -> None:
               help="Curated per-project SMS records (finding F12): "
                    "<dir>/<project_id>/device.json + property-*.json "
                    "[env: REGIMO_SMS_EXTRAS; default data/regimo-core/sms].")
+@click.option("--columns-extras-dir", "columns_extras_dir", default=None, type=click.Path(file_okay=False),
+              help="Per-project columns manifests (UPL-004 Stage 2, decision A): "
+                   "<dir>/<project_id>/columns.json, written by the data-file "
+                   "side at publish time [env: REGIMO_COLUMNS_EXTRAS; "
+                   "default data/regimo-core/columns].")
 @click.option("--interval", default=60.0, show_default=True, metavar="SECONDS",
               help="Polling interval of the loop (used with --loop).")
 @click.option("--loop/--once", "run_loop", default=False, show_default=True,
               help="Run once and exit, or poll until interrupted.")
 @click.option("-v", "--verbose", is_flag=True, help="Log at INFO instead of WARNING.")
 def sync(rdmo_url, token, fuseki_url, dataset, fuseki_user, fuseki_password,
-         kafka_servers, state_file, artifacts_dir, sms_extras_dir, interval,
-         run_loop, verbose):
+         kafka_servers, state_file, artifacts_dir, sms_extras_dir,
+         columns_extras_dir, interval, run_loop, verbose):
     """Pull RDMO, update the internal database, publish change events."""
     logging.basicConfig(level=logging.INFO if verbose else logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -91,6 +96,8 @@ def sync(rdmo_url, token, fuseki_url, dataset, fuseki_user, fuseki_password,
         "REGIMO_SYNC_ARTIFACTS", "data/regimo-core/artifacts")
     sms_extras_dir = sms_extras_dir or _env(
         "REGIMO_SMS_EXTRAS", "data/regimo-core/sms")
+    columns_extras_dir = columns_extras_dir or _env(
+        "REGIMO_COLUMNS_EXTRAS", "data/regimo-core/columns")
 
     client = RDMOClient(rdmo_url, token)
     store = FusekiStore(fuseki_url, dataset, fuseki_user, fuseki_password)
@@ -102,6 +109,7 @@ def sync(rdmo_url, token, fuseki_url, dataset, fuseki_user, fuseki_password,
         artifacts_dir=_path(artifacts_dir),
         bus=optional_bus_publisher(kafka_servers),
         sms_extras_dir=_path(sms_extras_dir),
+        columns_extras_dir=_path(columns_extras_dir),
     )
 
     click.echo(f"regimo-core sync: rdmo={rdmo_url} fuseki={fuseki_url}/{dataset} "

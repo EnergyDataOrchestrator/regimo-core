@@ -20,8 +20,10 @@ class TransformError(RuntimeError):
 
 
 def transform_madmp(document: dict[str, Any], device: dict | None = None,
-                    properties: list[dict] | None = None) -> "tuple[str, dict]":
-    """Transform ``{"dmp": {...}}`` (+ optional SMS extras) into Turtle.
+                    properties: list[dict] | None = None,
+                    columns: list[dict] | None = None) -> "tuple[str, dict]":
+    """Transform ``{"dmp": {...}}`` (+ optional SMS extras and columns
+    manifest entries) into Turtle.
 
     Returns ``(turtle, meta)`` where ``meta`` carries the project IRI (the
     maDMP ``dmp_id``) among the agnostic-trip metadata.
@@ -34,7 +36,8 @@ def transform_madmp(document: dict[str, Any], device: dict | None = None,
             "(uv pip install -e infrastructure/fuseki-proto/tool) to enable the sync engine") from exc
 
     try:
-        turtle, _checks, meta = transform(document, device, properties or [])
+        turtle, _checks, meta = transform(document, device, properties or [],
+                                          columns=columns)
     except Exception as exc:
         raise TransformError(f"agnostic-trip transform failed: {exc}") from exc
 

@@ -308,6 +308,56 @@ def test_sms_extras_are_passed_to_the_transform(setup, tmp_path):
     assert seen["device"] is None and seen["properties"] == []
 
 
+def test_columns_extras_are_passed_to_the_transform(setup, tmp_path):
+    """Columns manifest (UPL-004 Stage 2, decision A): written by the
+    data-file side, loaded per project, passed to the transform, and part
+    of the change digest (writing the manifest re-transforms)."""
+    store, bus, state, artifacts = setup
+    manifest = {"source": "oemetadata-datapackage",
+                "datasets": [{"dataset_title": "Dataset #1", "columns": [
+                    {"name": "active_power", "datatype": "float", "unit": "KW"},
+                ]}]}
+    extras = tmp_path / "columns" / "4"
+    extras.mkdir(parents=True)
+    (extras / "columns.json").write_text(json.dumps(manifest), encoding="utf-8")
+    seen = {}
+
+    def capture_transform(document, device=None, properties=None, columns=None):
+        seen["columns"] = columns
+        return fake_transform(document)
+
+    client = FakeRDMOClient({4: {"dmp": {"title": "M2",
+                                         "dmp_id": {"identifier": "urn:uuid:4"}}}})
+    engine = _engine(client, store, bus, state, artifacts,
+                     transform=capture_transform,
+                     columns_extras_dir=tmp_path / "columns")
+    result = engine.run_once()
+
+    assert seen["columns"] == manifest["datasets"]
+    # first round: the project is new -> created (with columns attached)
+    assert result.created == [4]
+
+    # unchanged manifest + unchanged maDMP -> no-op round
+    result = engine.run_once()
+    assert result.changed is False
+
+    # a changed manifest participates in the digest -> re-transform
+    manifest["datasets"][0]["columns"].append(
+        {"name": "id", "datatype": "bigint"})
+    (extras / "columns.json").write_text(json.dumps(manifest), encoding="utf-8")
+    result = engine.run_once()
+    assert result.updated == [4]
+    assert len(seen["columns"][0]["columns"]) == 2
+
+    # project without a manifest runs without columns
+    seen.clear()
+    client.madmps[4] = {"dmp": {"title": "M2 changed",
+                                "dmp_id": {"identifier": "urn:uuid:4"}}}
+    engine.columns_extras_dir = None
+    engine.run_once()
+    assert seen["columns"] is None
+
+
 def test_state_roundtrip(setup, tmp_path):
     store, bus, state, artifacts = setup
     client = FakeRDMOClient({4: {"dmp": {"title": "M2",

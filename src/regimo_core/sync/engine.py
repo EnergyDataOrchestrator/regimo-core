@@ -25,6 +25,7 @@ artifact format).
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import time
@@ -46,10 +47,11 @@ TransformFn = Callable[[dict], "tuple[str, dict]"]
 
 
 def madmp_digest(document: dict[str, Any], extras_bytes: bytes = b"") -> str:
-    """Stable SHA-256 over the maDMP content plus the curated SMS extras.
+    """Stable SHA-256 over the maDMP content plus the curated extras.
 
-    The extras (device/property records, finding F12) end up in the same
-    graph, so they must participate in change detection.
+    The extras (SMS device/property records, finding F12; the columns
+    manifest, UPL-004 Stage 2 decision A) end up in the same graph, so they
+    must participate in change detection.
     """
     canonical = json.dumps(document, sort_keys=True, ensure_ascii=False)
     hasher = hashlib.sha256()
@@ -93,6 +95,7 @@ class SyncEngine:
         bus: Optional[Any] = None,
         ontology_uri: str = "",
         sms_extras_dir: Optional[Path] = None,
+        columns_extras_dir: Optional[Path] = None,
     ) -> None:
         self.client = client
         self.store = store
@@ -102,6 +105,7 @@ class SyncEngine:
         self.bus = bus
         self.ontology_uri = ontology_uri
         self.sms_extras_dir = Path(sms_extras_dir) if sms_extras_dir else None
+        self.columns_extras_dir = Path(columns_extras_dir) if columns_extras_dir else None
 
     # -- main loop ------------------------------------------------------------
 
@@ -151,7 +155,9 @@ class SyncEngine:
             return False
 
         device, properties, extras_paths = self._sms_extras(project.id)
+        columns, columns_paths = self._columns_extras(project.id)
         extras_bytes = b"".join(path.read_bytes() for path in extras_paths)
+        extras_bytes += b"".join(path.read_bytes() for path in columns_paths)
         digest = madmp_digest(document, extras_bytes)
         if known is not None and known.madmp_sha256 == digest:
             # Refresh cheap metadata so the state file stays truthful even
@@ -166,7 +172,13 @@ class SyncEngine:
                         project.id, project.title)
 
         try:
-            turtle, meta = self.transform(document, device, properties)
+            # Older transform callbacks (test doubles) predate the columns
+            # parameter; detect arity once instead of retrying on TypeError,
+            # which would mask a transform's own internal TypeError.
+            if "columns" in inspect.signature(self.transform).parameters:
+                turtle, meta = self.transform(document, device, properties, columns)
+            else:
+                turtle, meta = self.transform(document, device, properties)
         except Exception as exc:
             result.skipped.append((project.id, f"transform failed: {exc}"))
             logger.warning("project %s (%s): skip — %s", project.id, project.title, exc)
@@ -250,6 +262,33 @@ class SyncEngine:
                     project_id, bool(device), len(properties))
         return device, properties, [p for p in paths if p]
 
+    # -- columns extras (UPL-004 Stage 2, decision A: the publisher owns the
+    #    column structure; the manifest is written by the data-file side at
+    #    publish time) ----------------------------------------------------------
+
+    def _columns_extras(self, project_id: int) -> "tuple[Optional[list[dict]], list[Path]]":
+        """Load the columns manifest of one RDMO project.
+
+        Layout: ``<columns_extras_dir>/<project_id>/columns.json`` — a
+        ColumnsManifest whose ``datasets`` entries are matched to the maDMP
+        datasets inside the transform (rule C6). ``None`` when absent or
+        malformed — the transform then runs without data-file columns.
+        """
+        if self.columns_extras_dir is None:
+            return None, []
+        manifest_path = self.columns_extras_dir / str(project_id) / "columns.json"
+        if not manifest_path.is_file():
+            return None, []
+        manifest = _load_json(manifest_path)
+        datasets = manifest.get("datasets") or []
+        if not isinstance(datasets, list):
+            logger.warning("project %s: columns manifest ignored — "
+                           "'datasets' is not a list", project_id)
+            return None, []
+        logger.info("project %s: columns extras (datasets=%d)",
+                    project_id, len(datasets))
+        return datasets, [manifest_path]
+
     # -- artifacts ------------------------------------------------------------
 
     def _write_artifact(self, project_id: int, turtle: str) -> str:
@@ -331,10 +370,11 @@ class SyncEngine:
 
 
 def _default_transform(document: dict, device: dict | None = None,
-                       properties: list[dict] | None = None) -> "tuple[str, dict]":
+                       properties: list[dict] | None = None,
+                       columns: list[dict] | None = None) -> "tuple[str, dict]":
     # Imported lazily so importing regimo_core.sync never pulls fuseki-proto.
     from regimo_core.sync.transform import transform_madmp
-    return transform_madmp(document, device, properties)
+    return transform_madmp(document, device, properties, columns)
 
 
 def _sha256(text: str) -> str:
